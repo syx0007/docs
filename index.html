@@ -622,7 +622,7 @@
             <img src="material/404.png"> 
             <h2>小笨蛋，页面跑偏啦～</h2>
             <p>页面不存在或已被移除</p>
-            <a href="/" id="goHomeLink">返回首页</a>
+            <a href="#" id="goHomeLink">返回首页</a>
         </div>
     </template>
     <script>
@@ -661,7 +661,6 @@
         const sidebarToggle = document.getElementById('sidebarToggle');
         const searchInput = document.getElementById('searchInput');
         const notFoundTemplate = document.getElementById('notFoundTemplate');
-        const goHomeLink = document.getElementById('goHomeLink');
         const themeOptions = document.querySelectorAll('.theme-option');
         // 初始化
         document.addEventListener('DOMContentLoaded', async () => {
@@ -670,7 +669,7 @@
             fetchHitokoto();
             await loadDirectoryTree();
             setupEventListeners();
-            handleInitialUrl(); // 处理初始URL，包括 ?file= 和 /path
+            handleInitialUrl();
             setTimeout(() => {
                 loadingScreen.style.opacity = '0';
                 loadingScreen.style.visibility = 'hidden';
@@ -699,43 +698,91 @@
                 directoryTree.innerHTML = `<div style="padding: 15px; color: red;">加载目录树失败: ${error.message}</div>`;
             }
         }
-        // 解析目录树
+        // 解析目录树 - 改进的解析方法，处理带反引号的文件名
         function parseDirectoryTree(text) {
             const lines = text.split('\n');
             const structure = {};
-            for (const line of lines) {
+            let currentGroup = '';
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                
                 if (line.startsWith('# ')) {
-                    const groupName = line.substring(2).trim();
-                    if (!structure[groupName]) {
-                        structure[groupName] = [];
+                    currentGroup = line.substring(2).trim();
+                    if (!structure[currentGroup]) {
+                        structure[currentGroup] = [];
                     }
-                } else if (line.startsWith('- [')) {
-                    const match = line.match(/^- \[(.+?)\]\((.+?)\)/);
-                    if (match) {
-                        const fileName = match[1];
-                        let filePath = match[2];
+                } else if (line.startsWith('- ')) {
+                    // 使用更健壮的方法解析Markdown链接
+                    // 检查是否包含反引号包裹的文件名
+                    if (line.includes('`')) {
+                        // 处理带反引号的文件名，例如：`(example)[example]example.md`
+                        const backtickStart = line.indexOf('`');
+                        const backtickEnd = line.indexOf('`', backtickStart + 1);
+                        const urlStart = line.indexOf('(', backtickEnd);
+                        const urlEnd = line.lastIndexOf(')');
+                        
+                        if (backtickStart !== -1 && backtickEnd !== -1 && 
+                            urlStart !== -1 && urlEnd !== -1) {
+                            
+                            // 提取文件名（去掉反引号）
+                            const fileName = line.substring(backtickStart + 1, backtickEnd).trim();
+                            let filePath = line.substring(urlStart + 1, urlEnd).trim();
+                            
+                            // 移除路径中的 ./content/ 或 content/ 前缀
+                            if (filePath.startsWith('./content/')) {
+                                filePath = filePath.substring(10);
+                            } else if (filePath.startsWith('content/')) {
+                                filePath = filePath.substring(8);
+                            }
+                            
+                            // 确保有当前分组
+                            if (!structure[currentGroup]) {
+                                structure[currentGroup] = [];
+                            }
+                            
+                            structure[currentGroup].push({
+                                name: fileName,
+                                path: filePath
+                            });
+                            continue;
+                        }
+                    }
+                    
+                    // 如果没有反引号，使用常规解析方法
+                    const linkStart = line.indexOf('[');
+                    const linkEnd = line.indexOf(']', linkStart);
+                    const urlStart = line.indexOf('(', linkEnd);
+                    const urlEnd = line.lastIndexOf(')');
+                    
+                    if (linkStart !== -1 && linkEnd !== -1 && 
+                        urlStart !== -1 && urlEnd !== -1) {
+                        
+                        const fileName = line.substring(linkStart + 1, linkEnd).trim();
+                        let filePath = line.substring(urlStart + 1, urlEnd).trim();
+                        
+                        // 移除路径中的 ./content/ 或 content/ 前缀
                         if (filePath.startsWith('./content/')) {
                             filePath = filePath.substring(10);
                         } else if (filePath.startsWith('content/')) {
                             filePath = filePath.substring(8);
                         }
-                        let currentGroup = '';
-                        for (let i = lines.indexOf(line) - 1; i >= 0; i--) {
-                            if (lines[i].startsWith('# ')) {
-                                currentGroup = lines[i].substring(2).trim();
-                                break;
-                            }
-                        }
+                        
+                        // 确保有当前分组
                         if (!structure[currentGroup]) {
                             structure[currentGroup] = [];
                         }
+                        
                         structure[currentGroup].push({
                             name: fileName,
                             path: filePath
                         });
+                    } else {
+                        console.warn('无法解析的行:', line);
                     }
                 }
             }
+            
             return buildNestedStructure(structure);
         }
         // 构建嵌套结构
@@ -820,6 +867,7 @@
                         item.name.toLowerCase().includes(state.searchQuery.toLowerCase());
                     if (shouldShowFile) {
                         const isActive = state.currentFile === item.path;
+                        // 显示完整的文件名（去掉.md扩展名）
                         const label = item.name.replace('.md', '');
                         html += `
                             <div class="nav-item ${isActive ? 'active' : ''}" 
@@ -855,7 +903,6 @@
                     const filePath = item.dataset.path;
                     loadFile(filePath);
                     updateActiveItem(filePath);
-                    updateUrl(filePath);
                     return;
                 }
                 const folderTitle = e.target.closest('.folder-title');
@@ -889,13 +936,10 @@
                     e.preventDefault();
                     loadFile('index.md');
                     updateActiveItem('index.md');
-                    updateUrl('index.md');
                 }
             });
             window.addEventListener('resize', handleResize);
             handleResize();
-            // 处理浏览器前进/后退
-            window.addEventListener('popstate', handleInitialUrl);
         }
         // 切换侧边栏
         function toggleSidebar(collapsed, saveToStorage = true) {
@@ -923,27 +967,59 @@
                 contentElement.style.display = wasCollapsed ? 'block' : 'none';
             }
         }
-        // 加载文件
+        // 加载文件 - 修复了特殊字符文件路径的处理
         async function loadFile(filePath) {
             if (!filePath) {
                 filePath = 'index.md';
             }
+            
+            // 确保文件路径有正确的扩展名
+            if (!filePath.toLowerCase().endsWith('.md')) {
+                filePath += '.md';
+            }
+            
             mainContent.style.opacity = '0';
             try {
                 let fullPath = filePath;
                 if (!filePath.startsWith('http') && !filePath.startsWith('/') && !filePath.startsWith('./')) {
                     fullPath = './content/' + filePath;
                 }
-                const response = await fetch(fullPath);
-                if (!response.ok) throw new Error('文件未找到');
-                const markdown = await response.text();
-                setTimeout(() => {
-                    mainContent.innerHTML = marked.parse(markdown);
-                    mainContent.style.opacity = '1';
-                    mainContent.style.animation = 'fadeIn 0.3s ease-out';
-                }, 150);
+                
+                // 对特殊字符进行编码，但保留斜杠
+                const pathParts = fullPath.split('/');
+                const encodedPathParts = pathParts.map(part => {
+                    // 对每个部分进行编码
+                    return encodeURIComponent(part);
+                });
+                const encodedPath = encodedPathParts.join('/');
+                
+                const response = await fetch(encodedPath);
+                if (!response.ok) {
+                    // 如果第一种方式失败，尝试使用原始路径
+                    const response2 = await fetch(fullPath);
+                    if (!response2.ok) throw new Error('文件未找到');
+                    const markdown = await response2.text();
+                    setTimeout(() => {
+                        mainContent.innerHTML = marked.parse(markdown);
+                        mainContent.style.opacity = '1';
+                        mainContent.style.animation = 'fadeIn 0.3s ease-out';
+                    }, 150);
+                } else {
+                    const markdown = await response.text();
+                    setTimeout(() => {
+                        mainContent.innerHTML = marked.parse(markdown);
+                        mainContent.style.opacity = '1';
+                        mainContent.style.animation = 'fadeIn 0.3s ease-out';
+                    }, 150);
+                }
+                
                 state.currentFile = filePath;
                 updateActiveItem(filePath);
+                
+                // 更新页面标题
+                const fileName = filePath.replace('.md', '');
+                document.title = fileName === 'index' ? '文档' : `${fileName} - 文档`;
+                
             } catch (error) {
                 console.error('加载文件失败:', error);
                 showNotFoundPage();
@@ -964,42 +1040,18 @@
                 item.classList.toggle('active', isActive);
             });
         }
-        // 处理初始 URL 和前进后退
+        // 处理初始 URL
         function handleInitialUrl() {
             const params = new URLSearchParams(window.location.search);
             const fileParam = params.get('file');
-            const path = window.location.pathname;
-
+            
             if (fileParam) {
-                // 如果存在 ?file= 参数，重定向到 /路径 模式
-                const newPath = fileParam.endsWith('.md') ? fileParam.replace(/\.md$/, '') : fileParam;
-                const url = '/' + newPath;
-                window.history.replaceState({}, '', url);
+                // 如果有 file 参数，加载对应文件
                 loadFile(fileParam.endsWith('.md') ? fileParam : fileParam + '.md');
-                updateActiveItem(fileParam + '.md');
-                return;
-            }
-
-            // 处理根路径
-            if (path === '/' || path === '/index.html') {
+            } else {
+                // 否则加载首页
                 loadFile('index.md');
-                updateActiveItem('index.md');
-                return;
             }
-
-            // 处理 /路径 模式
-            const fileName = path.endsWith('/') ? path.slice(1, -1) : path.slice(1);
-            if (fileName) {
-                const filePath = fileName + '.md';
-                loadFile(filePath);
-                updateActiveItem(filePath);
-            }
-        }
-        // 更新 URL 为路径形式
-        function updateUrl(filePath) {
-            const path = filePath.replace(/\.md$/, '');
-            const url = path === 'index' ? '/' : '/' + path;
-            window.history.pushState({ path: url }, '', url);
         }
         // 应用主题
         function applyTheme(theme) {
