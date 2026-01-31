@@ -31,6 +31,12 @@
             /* 滚动条颜色 */
             --scrollbar-thumb: rgba(0, 0, 0, 0.2);
             --scrollbar-track: transparent;
+            /* 高亮颜色 */
+            --highlight-bg: #fffacd;
+            --highlight-text: #d48806;
+            /* 提示框颜色 */
+            --tooltip-bg: rgba(0, 0, 0, 0.8);
+            --tooltip-text: #ffffff;
         }
         /* 深色主题 */
         [data-theme="dark"] {
@@ -45,6 +51,10 @@
             --loading-color: #60a5fa;
             --scrollbar-thumb: rgba(255, 255, 255, 0.2);
             --scrollbar-track: transparent;
+            --highlight-bg: #3c3c00;
+            --highlight-text: #ffd700;
+            --tooltip-bg: rgba(255, 255, 255, 0.9);
+            --tooltip-text: #000000;
         }
         /* 蓝色主题 */
         [data-theme="blue"] {
@@ -58,6 +68,10 @@
             --card-bg: #ffffff;
             --scrollbar-thumb: rgba(26, 115, 232, 0.3);
             --scrollbar-track: transparent;
+            --highlight-bg: #e3f2fd;
+            --highlight-text: #1976d2;
+            --tooltip-bg: rgba(26, 115, 232, 0.9);
+            --tooltip-text: #ffffff;
         }
         /* 蔚蓝档案主题 */
         [data-theme="ba"] {
@@ -71,6 +85,10 @@
             --card-bg: #ffffff;
             --scrollbar-thumb: rgba(93, 156, 236, 0.3);
             --scrollbar-track: transparent;
+            --highlight-bg: #e8f4ff;
+            --highlight-text: #3498db;
+            --tooltip-bg: rgba(93, 156, 236, 0.9);
+            --tooltip-text: #ffffff;
         }
         /* 粉色主题 */
         [data-theme="pink"] {
@@ -84,6 +102,10 @@
             --card-bg: #ffffff;
             --scrollbar-thumb: rgba(255, 107, 139, 0.3);
             --scrollbar-track: transparent;
+            --highlight-bg: #fff0f3;
+            --highlight-text: #e91e63;
+            --tooltip-bg: rgba(255, 107, 139, 0.9);
+            --tooltip-text: #ffffff;
         }
         * {
             margin: 0;
@@ -252,6 +274,48 @@
             overflow: hidden;
             text-overflow: ellipsis;
         }
+        /* 鼠标悬停提示框 - 通用样式 */
+        .nav-item-tooltip, .folder-tooltip {
+            position: absolute;
+            left: 100%;
+            top: 50%;
+            transform: translate(10px, -50%);
+            background-color: var(--tooltip-bg);
+            color: var(--tooltip-text);
+            padding: 8px 12px;
+            border-radius: var(--border-radius);
+            font-size: 14px;
+            white-space: nowrap;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s, visibility 0.2s;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            pointer-events: none;
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .nav-item:hover .nav-item-tooltip {
+            opacity: 1;
+            visibility: visible;
+        }
+        /* 文件夹悬停提示 */
+        .folder-title {
+            position: relative;
+        }
+        .folder-title:hover .folder-tooltip {
+            opacity: 1;
+            visibility: visible;
+        }
+        /* 关键字高亮 */
+        .highlight {
+            background-color: var(--highlight-bg);
+            color: var(--highlight-text);
+            padding: 0 2px;
+            border-radius: 3px;
+            font-weight: 600;
+        }
         /* 文件夹样式 */
         .folder {
             padding-left: 20px;
@@ -265,7 +329,6 @@
             gap: 12px;
             cursor: pointer;
             user-select: none;
-            position: relative;
         }
         .folder-title:hover {
             background-color: var(--hover-bg);
@@ -545,6 +608,9 @@
             .sidebar-collapsed .sidebar-toggle {
                 left: 12px;
             }
+            .nav-item-tooltip, .folder-tooltip {
+                display: none; /* 在移动设备上隐藏提示框 */
+            }
         }
     </style>
 </head>
@@ -646,7 +712,8 @@
             collapsedFolders: JSON.parse(localStorage.getItem('collapsedFolders')) || {},
             sidebarCollapsed: localStorage.getItem('sidebarCollapsed') === 'true',
             searchQuery: '',
-            themePanelVisible: false
+            themePanelVisible: false,
+            searchResults: []
         };
         // DOM 元素
         const loadingScreen = document.getElementById('loadingScreen');
@@ -662,6 +729,25 @@
         const searchInput = document.getElementById('searchInput');
         const notFoundTemplate = document.getElementById('notFoundTemplate');
         const themeOptions = document.querySelectorAll('.theme-option');
+        
+        // 工具函数：高亮文本
+        function highlightText(text, query) {
+            if (!query || !text) return text;
+            
+            // 转义正则表达式特殊字符
+            const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`(${escapedQuery})`, 'gi');
+            return text.replace(regex, '<span class="highlight">$1</span>');
+        }
+        
+        // 工具函数：转义HTML
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
         // 初始化
         document.addEventListener('DOMContentLoaded', async () => {
             applyTheme(state.theme);
@@ -675,6 +761,7 @@
                 loadingScreen.style.visibility = 'hidden';
             }, 500);
         });
+        
         // 获取一言
         async function fetchHitokoto() {
             try {
@@ -685,6 +772,7 @@
                 hitokotoElement.textContent = '"学而不思则罔，思而不学则殆。" —— 孔子';
             }
         }
+        
         // 加载目录树
         async function loadDirectoryTree() {
             try {
@@ -698,6 +786,7 @@
                 directoryTree.innerHTML = `<div style="padding: 15px; color: red;">加载目录树失败: ${error.message}</div>`;
             }
         }
+        
         // 解析目录树 - 改进的解析方法，处理带反引号的文件名
         function parseDirectoryTree(text) {
             const lines = text.split('\n');
@@ -785,6 +874,7 @@
             
             return buildNestedStructure(structure);
         }
+        
         // 构建嵌套结构
         function buildNestedStructure(flatStructure) {
             const nestedStructure = {};
@@ -816,6 +906,7 @@
             });
             return nestedStructure;
         }
+        
         // 渲染目录树
         function renderDirectoryTree() {
             if (!state.directoryStructure) return;
@@ -825,11 +916,13 @@
                     <div class="nav-item ${!state.currentFile || state.currentFile === 'index.md' ? 'active' : ''}" data-path="index.md">
                         <div class="icon"><i class="ti ti-home"></i></div>
                         <div class="label">首页</div>
+                        <div class="nav-item-tooltip">首页</div>
                     </div>
                 </div>
             `;
             html += renderNestedItems(state.directoryStructure);
             directoryTree.innerHTML = html;
+            
             if (state.searchQuery && directoryTree.children.length === 0) {
                 directoryTree.innerHTML = `
                     <div style="padding: 20px; text-align: center; color: var(--text-color); opacity: 0.7;">
@@ -838,63 +931,112 @@
                 `;
             }
         }
-        // 递归渲染嵌套项目
-        function renderNestedItems(items, level = 0) {
+        
+        // 递归渲染嵌套项目 - 改进搜索逻辑
+        function renderNestedItems(items, level = 0, parentPath = '') {
             let html = '';
             Object.keys(items).forEach(key => {
                 const item = items[key];
                 if (item._type === 'folder') {
-                    const shouldShowFolder = !state.searchQuery ||
-                        item._name.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
-                        hasMatchingItems(item._items, state.searchQuery.toLowerCase());
+                    // 检查文件夹是否匹配搜索
+                    const folderMatch = state.searchQuery ? 
+                        item._name.toLowerCase().includes(state.searchQuery.toLowerCase()) : false;
+                    
+                    // 检查文件夹内是否有匹配的项目
+                    const hasMatchingItems = checkMatchingItems(item._items, state.searchQuery);
+                    
+                    // 是否应该显示文件夹
+                    const shouldShowFolder = !state.searchQuery || folderMatch || hasMatchingItems;
+                    
                     if (!shouldShowFolder) return;
-                    const isCollapsed = state.collapsedFolders[item._path] !== undefined ? 
-                                      state.collapsedFolders[item._path] : level > 0;
+                    
+                    // 计算文件夹是否应该展开
+                    const shouldExpand = state.searchQuery && (folderMatch || hasMatchingItems);
+                    const isCollapsed = shouldExpand ? false : (state.collapsedFolders[item._path] !== undefined ? 
+                                      state.collapsedFolders[item._path] : level > 0);
+                    
+                    // 高亮文件夹名
+                    const folderName = state.searchQuery ? 
+                        highlightText(escapeHtml(item._name), state.searchQuery) : 
+                        escapeHtml(item._name);
+                    
                     html += `
                         <div class="folder" style="padding-left: ${level * 12}px;">
                             <div class="folder-title ${isCollapsed ? 'collapsed' : ''}" data-folder-path="${item._path}">
                                 <div class="icon"><i class="ti ti-folder"></i></div>
-                                <div class="label">${item._name}</div>
+                                <div class="label">${folderName}</div>
                                 <div class="chevron"><i class="ti ti-chevron-down"></i></div>
+                                <div class="folder-tooltip">${escapeHtml(item._name)}</div>
                             </div>
                             <div class="folder-content" style="${isCollapsed ? 'display: none;' : ''}">
-                                ${renderNestedItems(item._items, level + 1)}
+                                ${renderNestedItems(item._items, level + 1, item._path)}
                             </div>
                         </div>
                     `;
                 } else if (item._type === 'file') {
-                    const shouldShowFile = !state.searchQuery || 
-                        item.name.toLowerCase().includes(state.searchQuery.toLowerCase());
-                    if (shouldShowFile) {
-                        const isActive = state.currentFile === item.path;
-                        // 显示完整的文件名（去掉.md扩展名）
-                        const label = item.name.replace('.md', '');
-                        html += `
-                            <div class="nav-item ${isActive ? 'active' : ''}" 
-                                 data-path="${item.path}"
-                                 style="padding-left: ${(level + 1) * 12 + 20}px;">
-                                <div class="icon"><i class="ti ti-file-text"></i></div>
-                                <div class="label">${label}</div>
-                            </div>
-                        `;
-                    }
+                    // 检查文件是否匹配搜索
+                    const fileMatch = state.searchQuery ? 
+                        item.name.toLowerCase().includes(state.searchQuery.toLowerCase()) : true;
+                    
+                    // 检查文件路径是否匹配搜索（包含父文件夹路径）
+                    const pathMatch = state.searchQuery && parentPath ? 
+                        parentPath.toLowerCase().includes(state.searchQuery.toLowerCase()) : false;
+                    
+                    // 是否应该显示文件
+                    const shouldShowFile = !state.searchQuery || fileMatch || pathMatch;
+                    
+                    if (!shouldShowFile) return;
+                    
+                    const isActive = state.currentFile === item.path;
+                    const label = item.name.replace('.md', '');
+                    
+                    // 高亮文件名
+                    const displayLabel = state.searchQuery ? 
+                        highlightText(escapeHtml(label), state.searchQuery) : 
+                        escapeHtml(label);
+                    
+                    // 完整的文件名（用于提示框）
+                    const fullFileName = item.name.replace('.md', '');
+                    
+                    html += `
+                        <div class="nav-item ${isActive ? 'active' : ''}" 
+                             data-path="${item.path}"
+                             style="padding-left: ${(level + 1) * 12 + 20}px;">
+                            <div class="icon"><i class="ti ti-file-text"></i></div>
+                            <div class="label">${displayLabel}</div>
+                            <div class="nav-item-tooltip">${escapeHtml(fullFileName)}</div>
+                        </div>
+                    `;
                 }
             });
             return html;
         }
-        // 检查匹配
-        function hasMatchingItems(items, query) {
+        
+        // 检查项目是否匹配搜索
+        function checkMatchingItems(items, query) {
+            if (!query) return true;
+            
             for (const key in items) {
                 const item = items[key];
                 if (item._type === 'folder') {
-                    if (item._name.toLowerCase().includes(query)) return true;
-                    if (hasMatchingItems(item._items, query)) return true;
+                    // 检查文件夹名是否匹配
+                    if (item._name.toLowerCase().includes(query.toLowerCase())) {
+                        return true;
+                    }
+                    // 递归检查子项
+                    if (checkMatchingItems(item._items, query)) {
+                        return true;
+                    }
                 } else if (item._type === 'file') {
-                    if (item.name.toLowerCase().includes(query)) return true;
+                    // 检查文件名是否匹配
+                    if (item.name.toLowerCase().includes(query.toLowerCase())) {
+                        return true;
+                    }
                 }
             }
             return false;
         }
+        
         // 设置事件监听器
         function setupEventListeners() {
             directoryTree.addEventListener('click', e => {
@@ -911,6 +1053,7 @@
                     toggleFolderCollapse(folderPath, folderTitle);
                 }
             });
+            
             themeSwitcher.addEventListener('click', toggleThemePanel);
             themeOptions.forEach(option => {
                 option.addEventListener('click', () => {
@@ -919,18 +1062,22 @@
                     toggleThemePanel();
                 });
             });
+            
             document.addEventListener('click', (e) => {
                 if (!themeSwitcher.contains(e.target) && !themePanel.contains(e.target)) {
                     hideThemePanel();
                 }
             });
+            
             sidebarToggle.addEventListener('click', () => {
                 toggleSidebar(!state.sidebarCollapsed);
             });
+            
             searchInput.addEventListener('input', (e) => {
                 state.searchQuery = e.target.value;
                 renderDirectoryTree();
             });
+            
             document.addEventListener('click', (e) => {
                 if (e.target.id === 'goHomeLink') {
                     e.preventDefault();
@@ -938,9 +1085,11 @@
                     updateActiveItem('index.md');
                 }
             });
+            
             window.addEventListener('resize', handleResize);
             handleResize();
         }
+        
         // 切换侧边栏
         function toggleSidebar(collapsed, saveToStorage = true) {
             state.sidebarCollapsed = collapsed;
@@ -950,12 +1099,14 @@
             }
             updateSidebarToggleIcon();
         }
+        
         function updateSidebarToggleIcon() {
             const icon = sidebarToggle.querySelector('i');
             if (icon) {
                 icon.className = state.sidebarCollapsed ? 'ti ti-menu-2' : 'ti ti-x';
             }
         }
+        
         // 折叠文件夹
         function toggleFolderCollapse(folderPath, folderTitle) {
             const wasCollapsed = state.collapsedFolders[folderPath] !== undefined ? state.collapsedFolders[folderPath] : true;
@@ -967,6 +1118,7 @@
                 contentElement.style.display = wasCollapsed ? 'block' : 'none';
             }
         }
+        
         // 加载文件 - 修复了特殊字符文件路径的处理
         async function loadFile(filePath) {
             if (!filePath) {
@@ -1025,6 +1177,7 @@
                 showNotFoundPage();
             }
         }
+        
         // 显示404
         function showNotFoundPage() {
             const notFoundContent = notFoundTemplate.content.cloneNode(true);
@@ -1032,6 +1185,7 @@
             mainContent.appendChild(notFoundContent);
             mainContent.style.opacity = '1';
         }
+        
         // 更新选中项
         function updateActiveItem(filePath) {
             document.querySelectorAll('.nav-item').forEach(item => {
@@ -1040,6 +1194,7 @@
                 item.classList.toggle('active', isActive);
             });
         }
+        
         // 处理初始 URL
         function handleInitialUrl() {
             const params = new URLSearchParams(window.location.search);
@@ -1053,6 +1208,7 @@
                 loadFile('index.md');
             }
         }
+        
         // 应用主题
         function applyTheme(theme) {
             state.theme = theme;
@@ -1065,24 +1221,29 @@
             }
             updateThemeOptions();
         }
+        
         // 更新主题选项
         function updateThemeOptions() {
             themeOptions.forEach(option => {
                 option.classList.toggle('active', option.dataset.theme === state.theme);
             });
         }
+        
         // 主题面板
         function toggleThemePanel() {
             state.themePanelVisible ? hideThemePanel() : showThemePanel();
         }
+        
         function showThemePanel() {
             themePanel.classList.add('show');
             state.themePanelVisible = true;
         }
+        
         function hideThemePanel() {
             themePanel.classList.remove('show');
             state.themePanelVisible = false;
         }
+        
         // 响应式
         function handleResize() {
             if (window.innerWidth < 768) {
@@ -1095,6 +1256,7 @@
                 }
             }
         }
+        
         // 监听系统主题
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
             if (state.theme === 'system') {
