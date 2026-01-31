@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 import os
+import re
 from pathlib import Path
+
+def escape_filename(filename):
+    """
+    转义文件名中的特殊字符，如果包含特殊字符则添加引号
+    """
+    # 检查是否包含可能影响Markdown链接解析的特殊字符
+    special_chars = r'[\[\]()<>]'
+    if re.search(special_chars, filename):
+        # 使用反引号包裹文件名（Markdown的内联代码格式）
+        return f"`{filename}`"
+    return filename
 
 def generate_directory_tree(root_dir="content", output_file="DIRECTORY_TREE.md"):
     """
@@ -48,9 +60,10 @@ def generate_directory_tree(root_dir="content", output_file="DIRECTORY_TREE.md")
                     f.write(f"# {display_dir.replace(os.sep, '/')}\n")
                 current_dir = display_dir
             
-            # 写入文件项
-            if f"- [{filename}]({full_path})" != "- [index.md](./content/index.md)":
-                f.write(f"- [{filename}]({full_path})\n")
+            # 写入文件项，转义文件名中的特殊字符
+            escaped_filename = escape_filename(filename)
+            if f"- [{escaped_filename}]({full_path})" != "- [index.md](./content/index.md)":
+                f.write(f"- [{escaped_filename}]({full_path})\n")
 
         print(f"目录树已生成到 {output_file}")
 
